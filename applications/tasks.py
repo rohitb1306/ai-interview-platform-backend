@@ -14,6 +14,21 @@ from .models import Application, ApplicationStatus
 from .text_extraction import extract_resume_text
 
 
+def issue_interview_token(application):
+    """Create a 48h interview token for the application and return the raw value."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    application.tokens.create(
+        token_hash=token_hash,
+        expires_at=timezone.now() + timedelta(hours=48),
+    )
+    return raw_token
+
+
+def interview_url_for(raw_token):
+    return f"{settings.FRONTEND_URL}/interview?token={raw_token}"
+
+
 @shared_task
 def parse_and_screen_resume(application_id):
     application = Application.objects.select_related("job_position", "candidate").get(
@@ -47,12 +62,7 @@ def parse_and_screen_resume(application_id):
     application.save(update_fields=["match_score", "gap_analysis", "status"])
 
     if match_score >= settings.MATCH_SCORE_THRESHOLD:
-        raw_token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        application.tokens.create(
-            token_hash=token_hash,
-            expires_at=timezone.now() + timedelta(hours=48),
-        )
+        raw_token = issue_interview_token(application)
         application.status = ApplicationStatus.SHORTLISTED
         application.save(update_fields=["status"])
         dispatch_invite_email.delay(str(application.id), raw_token)
@@ -67,7 +77,7 @@ def dispatch_invite_email(application_id, token):
     application = Application.objects.select_related("candidate", "job_position").get(
         id=application_id
     )
-    interview_url = f"{settings.FRONTEND_URL}/interview?token={token}"
+    interview_url = interview_url_for(token)
     send_mail(
         subject=f"You're shortlisted for {application.job_position.title}!",
         message=(

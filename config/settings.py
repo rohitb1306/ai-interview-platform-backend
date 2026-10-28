@@ -5,6 +5,7 @@ Django settings for config project.
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
     'jobs',
     'applications',
     'interviews',
+    'recruiter',
 ]
 
 MIDDLEWARE = [
@@ -161,13 +163,36 @@ CELERY_TIMEZONE = TIME_ZONE
 
 LLM_PROVIDER = env('LLM_PROVIDER', default='gemini')
 GEMINI_API_KEY = env('GEMINI_API_KEY', default='')
+# Google retires model versions; override these in .env when that happens.
+GEMINI_GENERATION_MODEL = env('GEMINI_GENERATION_MODEL', default='gemini-flash-latest')
+GEMINI_EMBEDDING_MODEL = env('GEMINI_EMBEDDING_MODEL', default='gemini-embedding-001')
 OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
 
 MATCH_SCORE_THRESHOLD = 70.0
 
 # Email (magic-link / rejection notices)
 
+# Local (DEBUG) prints emails to the terminal; deployed (not DEBUG) sends via SMTP.
+# Set EMAIL_BACKEND explicitly to override either way.
 EMAIL_BACKEND = env(
-    'EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend'
+    'EMAIL_BACKEND',
+    default=(
+        'django.core.mail.backends.console.EmailBackend'
+        if DEBUG
+        else 'django.core.mail.backends.smtp.EmailBackend'
+    ),
 )
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@example.com')
+
+# SMTP (only used with the smtp backend). For Gmail, the password is an App Password.
+EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_TIMEOUT = 10
+
+if EMAIL_BACKEND.endswith('smtp.EmailBackend') and not (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD):
+    raise ImproperlyConfigured(
+        'SMTP email is enabled but EMAIL_HOST_USER / EMAIL_HOST_PASSWORD are not set.'
+    )
